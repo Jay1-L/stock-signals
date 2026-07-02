@@ -62,4 +62,184 @@
   .stat b{color:var(--text);font-family:"SF Mono",ui-monospace,Menlo,monospace;font-weight:600}
   .stat b.up{color:var(--profit)} .stat b.down{color:var(--loss)}
   .more-link{color:var(--link);font-size:.95rem;font-weight:500;cursor:pointer;background:none;border:none;padding:0;font-family:inherit}
-  
+  table.ptable{width:100%;border-collapse:collapse;margin-top:12px;font-size:.88rem;display:none}
+  .card.ptable-open table.ptable{display:table}
+  .ptable th{color:var(--text-faint);font-weight:600;text-align:right;padding:6px 4px;border-bottom:1px solid var(--border)}
+  .ptable th:first-child,.ptable td:first-child{text-align:left}
+  .ptable td{text-align:right;padding:7px 4px;border-bottom:1px solid var(--border);font-family:"SF Mono",ui-monospace,Menlo,monospace}
+  .ptable td.up{color:var(--profit)} .ptable td.down{color:var(--loss)}
+  .ptable tr.best td{background:var(--blue-bg);font-weight:700}
+  .empty{padding:60px 20px;text-align:center;color:var(--text-faint);line-height:1.7}
+</style>
+</head>
+<body>
+
+<h1>매수</h1>
+
+<div class="mode-tabs">
+  <button class="mode-tab on" data-mode="trend">추세추종</button>
+  <button class="mode-tab" data-mode="season">계절성</button>
+</div>
+
+<div class="banner">
+  <span class="dot"></span><span id="asOf">신호 기준일 로딩 중…</span>
+</div>
+
+<input type="search" class="search" id="search" placeholder="종목명 검색">
+
+<div class="filter-row">
+  <span class="flabel">국가</span>
+  <button class="chip on" data-f="country" data-v="all">전체</button>
+  <button class="chip" data-f="country" data-v="KR">한국</button>
+  <button class="chip" data-f="country" data-v="US">미국</button>
+  <span class="flabel">자산</span>
+  <button class="chip on" data-f="asset" data-v="all">전체</button>
+  <button class="chip" data-f="asset" data-v="stock">주식</button>
+  <button class="chip" data-f="asset" data-v="etf">ETF</button>
+</div>
+<div class="filter-row">
+  <span class="flabel">신호</span>
+  <button class="chip on" data-f="sig" data-v="all">전체</button>
+  <button class="chip" data-f="sig" data-v="avg">이평</button>
+  <button class="chip" data-f="sig" data-v="box">박스</button>
+  <button class="chip" data-f="sig" data-v="high">신고가</button>
+</div>
+<div class="filter-row">
+  <span class="flabel">시총</span>
+  <button class="chip on" data-f="mcap" data-v="0">전체</button>
+  <button class="chip" data-f="mcap" data-v="1e9">≥$1B</button>
+  <button class="chip" data-f="mcap" data-v="1e10">≥$10B</button>
+  <button class="chip" data-f="mcap" data-v="1e11">≥$100B</button>
+  <button class="chip" data-f="mcap" data-v="1e12">≥$1T</button>
+  <select class="sort" id="sort">
+    <option value="mcap">시총순</option>
+    <option value="rs">RS순</option>
+    <option value="win">승률순</option>
+    <option value="pl">손익비순</option>
+    <option value="name">이름순</option>
+  </select>
+</div>
+
+<div class="count" id="count"></div>
+<div id="list"></div>
+
+<script>
+"use strict";
+const state = { country:"all", asset:"all", sig:"all", mcap:0, sort:"mcap", q:"", mode:"trend" };
+let DATA = null;
+const SIGNAL = { avg:"이평", box:"박스", high:"신고가" };
+const $ = s => document.querySelector(s);
+
+async function load(){
+  try{
+    const res = await fetch("signals.json", {cache:"no-store"});
+    if(!res.ok) throw 0;
+    DATA = await res.json();
+    $("#asOf").textContent = "신호 기준일 " + DATA.asOf + " · 전 재료 최신";
+    render();
+  }catch{
+    $("#asOf").textContent = "signals.json이 아직 없어요 — Actions에서 첫 스캔을 실행하세요";
+  }
+}
+
+function filtered(){
+  if(!DATA) return [];
+  let arr = DATA.stocks.filter(s =>
+    (state.country==="all" || s.country===state.country) &&
+    (state.asset==="all"   || s.asset===state.asset) &&
+    (state.sig==="all"     || s.sig===state.sig) &&
+    (state.mcap===0        || (s.mcap||0) >= state.mcap) &&
+    (!state.q || s.name.toLowerCase().includes(state.q))
+  );
+  const key = state.sort;
+  arr.sort((a,b)=>{
+    if(key==="name") return a.name.localeCompare(b.name,"ko");
+    if(key==="mcap") return (b.mcap||0)-(a.mcap||0);
+    if(key==="rs")   return b.rs-a.rs;
+    if(key==="win")  return b.stats.win-a.stats.win;
+    if(key==="pl")   return b.stats.pl-a.stats.pl;
+    return 0;
+  });
+  return arr;
+}
+
+const fmt = n => n>=1000 ? n.toLocaleString("ko-KR",{maximumFractionDigits:0}) : n.toLocaleString("ko-KR",{maximumFractionDigits:2});
+const money = m => !m ? "" : m>=1e12 ? "$"+(m/1e12).toFixed(1)+"T" : m>=1e9 ? "$"+(m/1e9).toFixed(1)+"B" : "$"+(m/1e6).toFixed(0)+"M";
+
+function periodTable(periods, bestDays){
+  const rows = periods.map(p =>
+    '<tr class="'+(p.days===bestDays?"best":"")+'">'+
+    '<td>'+p.days+'일</td><td>'+p.win+'%</td><td>'+p.n+'</td>'+
+    '<td class="up">+'+p.avgP+'%</td><td class="down">'+p.avgL+'%</td><td>'+p.pl+'</td></tr>'
+  ).join("");
+  return '<table class="ptable"><thead><tr><th>보유</th><th>승률</th><th>표본</th>'+
+    '<th>평균이익</th><th>평균손실</th><th>손익비</th></tr></thead><tbody>'+rows+'</tbody></table>';
+}
+
+function render(){
+  if(state.mode==="season"){
+    $("#count").textContent = "";
+    $("#list").innerHTML = '<div class="empty">계절성 모드는 준비 중이에요.</div>';
+    return;
+  }
+  const arr = filtered();
+  $("#count").textContent = arr.length + "종목";
+  if(!arr.length){
+    $("#list").innerHTML = '<div class="empty">조건에 맞는 종목이 없어요.<br>필터를 조정해 보세요.</div>';
+    return;
+  }
+  $("#list").innerHTML = arr.map((s,i)=>
+    '<div class="card">'+
+      '<div class="card-head">'+
+        '<span class="rank">'+(i+1)+'</span>'+
+        '<span class="name">'+s.name+(s.mcap?'<small>'+money(s.mcap)+'</small>':'')+'</span>'+
+        '<span class="badge '+s.sig+'">'+SIGNAL[s.sig]+'</span>'+
+        '<span class="chev">▼</span>'+
+      '</div>'+
+      '<div class="card-sub">'+s.desc+'</div>'+
+      '<div class="detail">'+
+        '<div class="zone-row">'+
+          '<span class="zone-label">매수 구간</span>'+
+          '<span class="zone-val">'+fmt(s.zone[0])+'~'+fmt(s.zone[1])+'</span>'+
+          '<span class="zone-badge'+(s.inZone?'':' out')+'">'+(s.inZone?'구간 내':'구간 밖')+'</span>'+
+          '<span class="close-price">· 종가 <b>'+fmt(s.close)+'</b></span>'+
+        '</div>'+
+        '<div class="stats">'+
+          '<div class="stat">종합 RS <b>'+s.rs+'</b></div>'+
+          '<div class="stat">승률 <b>'+s.stats.win+'%</b></div>'+
+          '<div class="stat">표본수 <b>'+s.stats.n+'</b></div>'+
+          '<div class="stat">평균이익 <b class="up">+'+s.stats.avgP+'%</b></div>'+
+          '<div class="stat">평균손실 <b class="down">'+s.stats.avgL+'%</b></div>'+
+          '<div class="stat">손익비 <b>'+s.stats.pl+'</b></div>'+
+        '</div>'+
+        '<button class="more-link">전체 '+s.periods.length+'기간 통계표 펼치기 ›</button>'+
+        periodTable(s.periods, s.stats.days)+
+      '</div>'+
+    '</div>').join("");
+}
+
+$("#list").addEventListener("click", e=>{
+  const card = e.target.closest(".card");
+  if(!card) return;
+  if(e.target.closest(".more-link")){ card.classList.toggle("ptable-open"); return; }
+  card.classList.toggle("open");
+});
+document.querySelectorAll(".chip").forEach(c=>c.addEventListener("click",()=>{
+  document.querySelectorAll('.chip[data-f="'+c.dataset.f+'"]').forEach(x=>x.classList.remove("on"));
+  c.classList.add("on");
+  state[c.dataset.f] = c.dataset.f==="mcap" ? Number(c.dataset.v) : c.dataset.v;
+  render();
+}));
+document.querySelectorAll(".mode-tab").forEach(t=>t.addEventListener("click",()=>{
+  document.querySelectorAll(".mode-tab").forEach(x=>x.classList.remove("on"));
+  t.classList.add("on");
+  state.mode = t.dataset.mode;
+  render();
+}));
+$("#sort").addEventListener("change", e=>{ state.sort=e.target.value; render(); });
+$("#search").addEventListener("input", e=>{ state.q=e.target.value.trim().toLowerCase(); render(); });
+
+load();
+</script>
+</body>
+</html>
