@@ -1,0 +1,4 @@
+finance-datareader
+yfinance
+pandas
+numpy
