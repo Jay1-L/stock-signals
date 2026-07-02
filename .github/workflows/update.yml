@@ -1,0 +1,36 @@
+name: 매일 신호 갱신
+
+on:
+  schedule:
+    - cron: "30 9 * * 1-5"
+    - cron: "30 21 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-signals:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 라이브러리 설치
+        run: pip install -r requirements.txt
+
+      - name: 신호 스캔 실행
+        run: python analyze.py
+
+      - name: signals.json 커밋
+        run: |
+          git config user.name "signal-bot"
+          git config user.email "actions@github.com"
+          git add signals.json
+          git diff --cached --quiet || git commit -m "signal update"
+          git push
