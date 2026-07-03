@@ -1,92 +1,41 @@
 # -*- coding: utf-8 -*-
 """
-추세추종 매수 신호 스캐너
-1) 한국(KRX) + 미국 종목/ETF 일봉 다운로드
-2) 신호 탐지: 이평 근접(avg) / 박스 돌파(box) / 신고가 돌파(high)
-3) 과거 전체 백테스트 -> 승률, 평균이익/손실, 손익비, 표본수
-4) 종합 RS 계산 후 signals.json 저장
+추세추종 매수 신호 스캐너 v2 — 전체 시장 스캔
+1) 한국: KOSPI + KOSDAQ 전체 상장종목 (스팩/우선주 제외) + 주요 ETF
+2) 미국: S&P500 전체 + 나스닥100 + 주요 ETF
+3) 신호 탐지: 이평 근접(avg) / 박스 돌파(box) / 신고가 돌파(high)
+4) 과거 전체 백테스트 -> 승률, 평균이익/손실, 손익비, 표본수
+5) 종합 RS 계산 후 signals.json 저장
 """
 import json
-import sys
 import datetime as dt
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 import pandas as pd
 
-UNIVERSE_KR = [
-    ("005930", "삼성전자", "KR", "stock"),
-    ("000660", "SK하이닉스", "KR", "stock"),
-    ("373220", "LG에너지솔루션", "KR", "stock"),
-    ("207940", "삼성바이오로직스", "KR", "stock"),
-    ("005380", "현대차", "KR", "stock"),
-    ("000270", "기아", "KR", "stock"),
-    ("068270", "셀트리온", "KR", "stock"),
-    ("035420", "NAVER", "KR", "stock"),
-    ("105560", "KB금융", "KR", "stock"),
-    ("055550", "신한지주", "KR", "stock"),
-    ("012450", "한화에어로스페이스", "KR", "stock"),
-    ("042660", "한화오션", "KR", "stock"),
-    ("009540", "HD한국조선해양", "KR", "stock"),
-    ("329180", "HD현대중공업", "KR", "stock"),
-    ("267260", "HD현대일렉트릭", "KR", "stock"),
-    ("006400", "삼성SDI", "KR", "stock"),
-    ("051910", "LG화학", "KR", "stock"),
-    ("035720", "카카오", "KR", "stock"),
-    ("015760", "한국전력", "KR", "stock"),
-    ("034020", "두산에너빌리티", "KR", "stock"),
-    ("000150", "두산", "KR", "stock"),
-    ("006800", "미래에셋증권", "KR", "stock"),
-    ("086520", "에코프로", "KR", "stock"),
-    ("247540", "에코프로비엠", "KR", "stock"),
-    ("196170", "알테오젠", "KR", "stock"),
-    ("217590", "TMC", "KR", "stock"),
-    ("083450", "GST", "KR", "stock"),
-    ("090460", "BH", "KR", "stock"),
-    ("023160", "태광", "KR", "stock"),
-    ("059090", "미코", "KR", "stock"),
-    ("095340", "ISC", "KR", "stock"),
-    ("240810", "원익IPS", "KR", "stock"),
-    ("403870", "HPSP", "KR", "stock"),
-    ("058470", "리노공업", "KR", "stock"),
-    ("039030", "이오테크닉스", "KR", "stock"),
-    ("098460", "고영", "KR", "stock"),
-    ("036930", "주성엔지니어링", "KR", "stock"),
-    ("131970", "두산테스나", "KR", "stock"),
-    ("069500", "KODEX 200", "KR", "etf"),
-    ("396500", "TIGER 차이나반도체FACTSET", "KR", "etf"),
-    ("413600", "SOL 글로벌AI반도체탑픽액티브", "KR", "etf"),
-    ("446770", "ACE 글로벌반도체TOP4 Plus", "KR", "etf"),
-    ("305720", "KODEX 2차전지산업", "KR", "etf"),
-    ("091160", "KODEX 반도체", "KR", "etf"),
-]
-UNIVERSE_US = [
-    ("AAPL", "Apple", "US", "stock"),
-    ("MSFT", "Microsoft", "US", "stock"),
-    ("NVDA", "NVIDIA", "US", "stock"),
-    ("GOOGL", "Alphabet", "US", "stock"),
-    ("AMZN", "Amazon", "US", "stock"),
-    ("META", "Meta", "US", "stock"),
-    ("TSLA", "Tesla", "US", "stock"),
-    ("AVGO", "Broadcom", "US", "stock"),
-    ("AMD", "AMD", "US", "stock"),
-    ("TSM", "TSMC", "US", "stock"),
-    ("LLY", "Eli Lilly", "US", "stock"),
-    ("JPM", "JPMorgan", "US", "stock"),
-    ("V", "Visa", "US", "stock"),
-    ("PLTR", "Palantir", "US", "stock"),
-    ("VRT", "Vertiv", "US", "stock"),
-    ("SPY", "SPDR S&P 500", "US", "etf"),
-    ("QQQ", "Invesco QQQ", "US", "etf"),
-    ("SMH", "VanEck Semiconductor", "US", "etf"),
-    ("SOXL", "Direxion Semi Bull 3X", "US", "etf"),
-    ("TLT", "iShares 20Y Treasury", "US", "etf"),
-]
-
+# ── 설정 ──
 HOLD_PERIODS = [2, 3, 5, 10, 20, 60, 126, 252]
 LOOKBACK_YEARS = 8
 MA_PROXIMITY = 0.025
 BOX_WINDOW = 40
 BOX_TIGHTNESS = 0.12
 MIN_SAMPLES = 8
+MIN_MCAP_KRW = 100_000_000_000   # 한국 최소 시총 1000억 (동전주/초소형주 제외)
+USDKRW = 1400                     # 시총 필터용 대략 환율
+WORKERS = 8                       # 동시 다운로드 수
+
+ETF_KR = [
+    ("069500", "KODEX 200"), ("396500", "TIGER 차이나반도체FACTSET"),
+    ("413600", "SOL 글로벌AI반도체탑픽액티브"), ("446770", "ACE 글로벌반도체TOP4 Plus"),
+    ("305720", "KODEX 2차전지산업"), ("091160", "KODEX 반도체"),
+    ("133690", "TIGER 미국나스닥100"), ("360750", "TIGER 미국S&P500"),
+]
+ETF_US = [
+    ("SPY", "SPDR S&P 500"), ("QQQ", "Invesco QQQ"),
+    ("SMH", "VanEck Semiconductor"), ("SOXL", "Direxion Semi Bull 3X"),
+    ("TLT", "iShares 20Y Treasury"), ("IWM", "iShares Russell 2000"),
+    ("GLD", "SPDR Gold"),
+]
 
 
 def sma(s, n): return s.rolling(n).mean()
@@ -160,6 +109,8 @@ def analyze_ticker(name, df, country, asset, mcap=None):
     if df is None or len(df) < 80:
         return None
     df = df.dropna(subset=["Close"]).copy()
+    if df["Close"].iloc[-30:].nunique() < 5:  # 거래정지 등 비정상 종목 제외
+        return None
     close = df["Close"]
     signals = detect_signals(df)
     if not signals:
@@ -207,50 +158,81 @@ def finalize(results):
     return results
 
 
-def download_all(full=False):
+def build_universe():
+    """한국 전체(KOSPI+KOSDAQ) + 미국(S&P500+나스닥100) + ETF 목록 생성"""
     import FinanceDataReader as fdr
+    universe = []  # (ticker, name, country, asset, mcap_usd)
+
+    # ── 한국: 전체 상장종목 ──
+    try:
+        krx = fdr.StockListing("KRX")
+        krx = krx[krx["Market"].isin(["KOSPI", "KOSDAQ"])]
+        for r in krx.itertuples():
+            name = str(r.Name)
+            # 스팩, 우선주, 리츠 인프라 등 제외
+            if "스팩" in name or name.endswith(("우", "우B", "우C", "1우", "2우B", "3우B")):
+                continue
+            mcap_krw = getattr(r, "Marcap", 0) or 0
+            if mcap_krw < MIN_MCAP_KRW:
+                continue
+            universe.append((str(r.Code), name, "KR", "stock", mcap_krw / USDKRW))
+        print(f"한국 종목: {sum(1 for u in universe if u[2]=='KR')}개")
+    except Exception as e:
+        print("KRX 목록 실패:", e)
+
+    # ── 미국: S&P500 + 나스닥100 ──
+    us_seen = set()
+    for listing in ["S&P500", "NASDAQ100"]:
+        try:
+            df = fdr.StockListing(listing)
+            sym_col = "Symbol" if "Symbol" in df.columns else df.columns[0]
+            name_col = "Name" if "Name" in df.columns else df.columns[1]
+            for r in df.itertuples():
+                sym = str(getattr(r, sym_col))
+                if sym in us_seen:
+                    continue
+                us_seen.add(sym)
+                universe.append((sym, str(getattr(r, name_col)), "US", "stock", None))
+        except Exception as e:
+            print(listing, "목록 실패:", e)
+    print(f"미국 종목: {len(us_seen)}개")
+
+    # ── ETF ──
+    for code, name in ETF_KR:
+        universe.append((code, name, "KR", "etf", None))
+    for sym, name in ETF_US:
+        universe.append((sym, name, "US", "etf", None))
+    return universe
+
+
+def fetch_and_analyze(item):
+    import FinanceDataReader as fdr
+    ticker, name, country, asset, mcap = item
     start = (dt.date.today() - dt.timedelta(days=365 * LOOKBACK_YEARS)).isoformat()
-    universe = list(UNIVERSE_KR) + list(UNIVERSE_US)
-
-    if full:
-        try:
-            k200 = fdr.StockListing("KOSPI200")
-            universe += [(r.Code, r.Name, "KR", "stock") for r in k200.itertuples()]
-        except Exception as e:
-            print("KOSPI200 목록 실패:", e)
-        try:
-            sp = fdr.StockListing("S&P500").head(100)
-            universe += [(r.Symbol, r.Name, "US", "stock") for r in sp.itertuples()]
-        except Exception as e:
-            print("S&P 목록 실패:", e)
-
-    seen, results = set(), []
-    for ticker, name, country, asset in universe:
-        if ticker in seen:
-            continue
-        seen.add(ticker)
-        try:
-            df = fdr.DataReader(ticker, start)
-            mcap = None
-            try:
-                if country == "US":
-                    import yfinance as yf
-                    mcap = yf.Ticker(ticker).fast_info.get("market_cap")
-            except Exception:
-                pass
-            r = analyze_ticker(name, df, country, asset, mcap)
-            if r:
-                results.append(r)
-                print("  OK " + name + ": " + r["desc"])
-        except Exception as e:
-            print("  FAIL " + name + ": " + str(e))
-    return results
+    try:
+        df = fdr.DataReader(ticker, start)
+        return analyze_ticker(name, df, country, asset, mcap)
+    except Exception:
+        return None
 
 
 def main():
-    full = "--full" in sys.argv
-    print("데이터 다운로드 및 신호 스캔 중...")
-    results = finalize(download_all(full))
+    print("유니버스 구성 중...")
+    universe = build_universe()
+    print(f"총 {len(universe)}종목 스캔 시작 (동시 {WORKERS}개)")
+
+    results, done = [], 0
+    with ThreadPoolExecutor(max_workers=WORKERS) as ex:
+        futures = [ex.submit(fetch_and_analyze, item) for item in universe]
+        for f in as_completed(futures):
+            done += 1
+            r = f.result()
+            if r:
+                results.append(r)
+            if done % 200 == 0:
+                print(f"  진행 {done}/{len(universe)} · 신호 {len(results)}개")
+
+    results = finalize(results)
     payload = dict(
         asOf=dt.date.today().isoformat(),
         count=len(results),
@@ -258,7 +240,7 @@ def main():
     )
     with open("signals.json", "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=1)
-    print("완료: " + str(len(results)) + "종목 신호 -> signals.json")
+    print(f"완료: {len(results)}종목 신호 -> signals.json")
 
 
 if __name__ == "__main__":
