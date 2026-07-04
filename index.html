@@ -22,8 +22,13 @@
     font-size:.95rem;font-weight:600;color:var(--text-sub);cursor:pointer}
   .mode-tab.on{background:var(--blue-bg);color:var(--blue-tx);border-color:var(--blue-tx)}
   .banner{display:flex;align-items:center;gap:10px;background:var(--green-bg);border:1px solid var(--green-bd);
-    border-radius:14px;padding:14px 16px;margin-bottom:16px;color:var(--green-tx);font-size:.95rem;font-weight:600}
+    border-radius:14px;padding:14px 16px;margin-bottom:12px;color:var(--green-tx);font-size:.95rem;font-weight:600}
   .banner .dot{width:9px;height:9px;border-radius:50%;background:var(--green-tx);flex:none}
+  .warn-banner{display:none;background:var(--orange-bg);border:1px solid #f7d9b3;
+    border-radius:14px;padding:13px 16px;margin-bottom:14px;color:var(--orange-tx);
+    font-size:.92rem;font-weight:500;line-height:1.55}
+  .warn-banner.show{display:block}
+  .warn-banner b{font-weight:700}
   .filter-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
   .flabel{font-size:.85rem;color:var(--text-faint);margin-right:2px}
   .chip{padding:8px 16px;border-radius:12px;border:1px solid var(--border);background:var(--card);
@@ -84,6 +89,7 @@
 <div class="banner">
   <span class="dot"></span><span id="asOf">신호 기준일 로딩 중…</span>
 </div>
+<div class="warn-banner" id="warnBanner"></div>
 
 <input type="search" class="search" id="search" placeholder="종목명 검색">
 
@@ -135,7 +141,17 @@ async function load(){
     const res = await fetch("signals.json", {cache:"no-store"});
     if(!res.ok) throw 0;
     DATA = await res.json();
-    $("#asOf").textContent = "신호 기준일 " + DATA.asOf + " · 전 재료 최신";
+    let info = "신호 기준일 " + DATA.asOf;
+    if(DATA.meta && DATA.meta.scanned){
+      info += " · " + DATA.meta.scanned.toLocaleString() + "종목 스캔"
+        + " (한국 " + (DATA.meta.krListed||0).toLocaleString()
+        + " · 미국 " + (DATA.meta.usListed||0).toLocaleString() + ")";
+    }
+    $("#asOf").textContent = info;
+    if(DATA.meta && DATA.meta.warnings && DATA.meta.warnings.length){
+      $("#warnBanner").innerHTML = "<b>⚠ 데이터 수집 경고</b><br>" + DATA.meta.warnings.join("<br>");
+      $("#warnBanner").classList.add("show");
+    }
     render();
   }catch{
     $("#asOf").textContent = "signals.json이 아직 없어요 — Actions에서 첫 스캔을 실행하세요";
