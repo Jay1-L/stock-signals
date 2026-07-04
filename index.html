@@ -29,6 +29,11 @@
     font-size:.92rem;font-weight:500;line-height:1.55}
   .warn-banner.show{display:block}
   .warn-banner b{font-weight:700}
+  .regime-row{display:flex;gap:8px;margin-bottom:14px}
+  .regime{flex:1;border-radius:14px;padding:12px 14px;font-size:.9rem;font-weight:600;line-height:1.5;border:1px solid}
+  .regime.bull{background:var(--green-bg);color:var(--green-tx);border-color:var(--green-bd)}
+  .regime.bear{background:#fdecec;color:var(--loss);border-color:#f6c7c8}
+  .regime small{display:block;font-weight:500;opacity:.85;font-size:.8rem;margin-top:2px}
   .filter-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
   .flabel{font-size:.85rem;color:var(--text-faint);margin-right:2px}
   .chip{padding:8px 16px;border-radius:12px;border:1px solid var(--border);background:var(--card);
@@ -90,6 +95,7 @@
   <span class="dot"></span><span id="asOf">신호 기준일 로딩 중…</span>
 </div>
 <div class="warn-banner" id="warnBanner"></div>
+<div class="regime-row" id="regimeRow"></div>
 
 <input type="search" class="search" id="search" placeholder="종목명 검색">
 
@@ -152,6 +158,13 @@ async function load(){
       $("#warnBanner").innerHTML = "<b>⚠ 데이터 수집 경고</b><br>" + DATA.meta.warnings.join("<br>");
       $("#warnBanner").classList.add("show");
     }
+    if(DATA.meta && DATA.meta.regime){
+      $("#regimeRow").innerHTML = Object.values(DATA.meta.regime).map(r =>
+        r.bull
+        ? '<div class="regime bull">🟢 '+r.index+' 상승장<small>추세추종 실행 가능</small></div>'
+        : '<div class="regime bear">🔴 '+r.index+' 하락·횡보장<small>신호 숨김 — 쉬는 구간</small></div>'
+      ).join("");
+    }
     render();
   }catch{
     $("#asOf").textContent = "signals.json이 아직 없어요 — Actions에서 첫 스캔을 실행하세요";
@@ -201,7 +214,11 @@ function render(){
   const arr = filtered();
   $("#count").textContent = arr.length + "종목";
   if(!arr.length){
-    $("#list").innerHTML = '<div class="empty">조건에 맞는 종목이 없어요.<br>필터를 조정해 보세요.</div>';
+    const allBear = DATA && DATA.meta && DATA.meta.regime &&
+      Object.values(DATA.meta.regime).every(r => !r.bull);
+    $("#list").innerHTML = allBear
+      ? '<div class="empty">모든 시장이 하락·횡보장이에요.<br>추세추종은 상승장에서만 — 지금은 쉬는 게 전략입니다. 🛌</div>'
+      : '<div class="empty">조건에 맞는 종목이 없어요.<br>필터를 조정해 보세요.</div>';
     return;
   }
   $("#list").innerHTML = arr.map((s,i)=>
