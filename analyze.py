@@ -192,6 +192,23 @@ def kr_list_from_krx():
     return out
 
 
+def kr_list_from_krx_desc():
+    """1.5순위: KRX-DESC (공시사이트 KIND 경유 상장법인 목록, 차단 덜함)"""
+    import FinanceDataReader as fdr
+    df = fdr.StockListing("KRX-DESC")
+    sym_col = "Symbol" if "Symbol" in df.columns else "Code"
+    out = []
+    for r in df.itertuples():
+        name = str(getattr(r, "Name", ""))
+        code = str(getattr(r, sym_col, "")).zfill(6)
+        if not name or not code.isdigit():
+            continue
+        if "스팩" in name:
+            continue
+        out.append((code, name, None))
+    return out
+
+
 def kr_list_from_kind():
     """2순위: KIND 상장법인목록 다운로드 (차단이 덜함)"""
     import requests
@@ -218,14 +235,19 @@ def kr_list_from_kind():
 
 def build_universe():
     universe = []  # (ticker, name, country, asset, mcap_usd)
+    meta = {"krSource": None, "krListed": 0, "usListed": 0, "warnings": []}
 
-    # ── 한국 ──
+    # ── 한국: 3중 폴백 ──
     kr = None
-    for src_name, fn in [("KRX", kr_list_from_krx), ("KIND", kr_list_from_kind)]:
+    sources = [("KRX", kr_list_from_krx),
+               ("KRX-DESC", kr_list_from_krx_desc),
+               ("KIND", kr_list_from_kind)]
+    for src_name, fn in sources:
         try:
             kr = fn()
             if kr and len(kr) > 100:
                 print(f"한국 목록 소스: {src_name} ({len(kr)}개)")
+                meta["krSource"] = src_name
                 break
             kr = None
         except Exception as e:
@@ -233,6 +255,14 @@ def build_universe():
     if kr is None:
         print("모든 한국 목록 소스 실패 -> 내장 대형주 목록 사용")
         kr = [(c, n, None) for c, n in FALLBACK_KR]
+        meta["krSource"] = "내장목록"
+        meta["warnings"].append(
+            f"한국 전체 종목 목록을 불러오지 못해 대형주 {len(FALLBACK_KR)}개만 스캔했어요. "
+            "코스피·코스닥 전체가 반영되지 않은 결과입니다.")
+    if meta["krSource"] == "KRX-DESC" or meta["krSource"] == "KIND":
+        meta["warnings"].append(
+            "시가총액 정보를 제공하지 않는 목록 소스를 사용해 한국 종목의 시총 필터가 동작하지 않아요.")
+    meta["krListed"] = len(kr)
     for code, name, mcap in kr:
         universe.append((code, name, "KR", "stock", mcap))
 
@@ -250,10 +280,12 @@ def build_universe():
                 universe.append((sym, str(getattr(r, name_col)), "US", "stock", None))
     except Exception as e:
         print("S&P500 목록 실패:", str(e)[:120])
+        meta["warnings"].append("미국 S&P500 목록을 불러오지 못해 일부 종목만 스캔했어요.")
     for sym, name in EXTRA_US:
         if sym not in us_seen:
             us_seen.add(sym)
             universe.append((sym, name, "US", "stock", None))
+    meta["usListed"] = len(us_seen)
     print(f"미국 종목: {len(us_seen)}개")
 
     # ── ETF ──
@@ -261,7 +293,7 @@ def build_universe():
         universe.append((code, name, "KR", "etf", None))
     for sym, name in ETF_US:
         universe.append((sym, name, "US", "etf", None))
-    return universe
+    return universe, meta
 
 
 def fetch_and_analyze(item):
@@ -277,7 +309,8 @@ def fetch_and_analyze(item):
 
 def main():
     print("유니버스 구성 중...")
-    universe = build_universe()
+    universe, meta = build_universe()
+    meta["scanned"] = len(universe)
     print(f"총 {len(universe)}종목 스캔 시작 (동시 {WORKERS}개)")
 
     results, done = [], 0
@@ -295,6 +328,7 @@ def main():
     payload = dict(
         asOf=dt.date.today().isoformat(),
         count=len(results),
+        meta=meta,
         stocks=results,
     )
     with open("signals.json", "w", encoding="utf-8") as f:
