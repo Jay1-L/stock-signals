@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-추세추종 매수 신호 스캐너 v2 — 전체 시장 스캔
-1) 한국: KOSPI + KOSDAQ 전체 상장종목 (스팩/우선주 제외) + 주요 ETF
-2) 미국: S&P500 전체 + 나스닥100 + 주요 ETF
-3) 신호 탐지: 이평 근접(avg) / 박스 돌파(box) / 신고가 돌파(high)
-4) 과거 전체 백테스트 -> 승률, 평균이익/손실, 손익비, 표본수
-5) 종합 RS 계산 후 signals.json 저장
+추세추종 매수 신호 스캐너 v3 — 전체 시장 스캔 (KRX 차단 우회)
+한국 종목 목록: KRX 정보데이터시스템 -> KIND 공시사이트 -> 내장 목록 순서로 시도
+미국: S&P500 전체 + 나스닥 주요종목
 """
+import io
 import json
 import datetime as dt
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -20,9 +18,8 @@ MA_PROXIMITY = 0.025
 BOX_WINDOW = 40
 BOX_TIGHTNESS = 0.12
 MIN_SAMPLES = 8
-MIN_MCAP_KRW = 100_000_000_000   # 한국 최소 시총 1000억 (동전주/초소형주 제외)
-USDKRW = 1400                     # 시총 필터용 대략 환율
-WORKERS = 8                       # 동시 다운로드 수
+MIN_TURNOVER_KRW = 500_000_000   # 한국 주식 최소 일평균 거래대금 5억 (초소형/유동성 없는 종목 제외)
+WORKERS = 8
 
 ETF_KR = [
     ("069500", "KODEX 200"), ("396500", "TIGER 차이나반도체FACTSET"),
@@ -35,6 +32,19 @@ ETF_US = [
     ("SMH", "VanEck Semiconductor"), ("SOXL", "Direxion Semi Bull 3X"),
     ("TLT", "iShares 20Y Treasury"), ("IWM", "iShares Russell 2000"),
     ("GLD", "SPDR Gold"),
+]
+# 나스닥100 중 S&P500에 없는 주요 종목 (보완용)
+EXTRA_US = [
+    ("ARM", "Arm Holdings"), ("PDD", "PDD Holdings"), ("MELI", "MercadoLibre"),
+    ("TEAM", "Atlassian"), ("DDOG", "Datadog"), ("ZS", "Zscaler"),
+    ("MRVL", "Marvell"), ("ASML", "ASML"), ("AZN", "AstraZeneca"),
+]
+# 최후 폴백용 한국 대형주 (모든 목록 소스 실패 시)
+FALLBACK_KR = [
+    ("005930", "삼성전자"), ("000660", "SK하이닉스"), ("373220", "LG에너지솔루션"),
+    ("207940", "삼성바이오로직스"), ("005380", "현대차"), ("000270", "기아"),
+    ("068270", "셀트리온"), ("035420", "NAVER"), ("012450", "한화에어로스페이스"),
+    ("042660", "한화오션"), ("267260", "HD현대일렉트릭"), ("034020", "두산에너빌리티"),
 ]
 
 
@@ -109,8 +119,13 @@ def analyze_ticker(name, df, country, asset, mcap=None):
     if df is None or len(df) < 80:
         return None
     df = df.dropna(subset=["Close"]).copy()
-    if df["Close"].iloc[-30:].nunique() < 5:  # 거래정지 등 비정상 종목 제외
+    if df["Close"].iloc[-30:].nunique() < 5:   # 거래정지 등 제외
         return None
+    # 한국 주식: 유동성 필터 (일평균 거래대금)
+    if country == "KR" and asset == "stock" and "Volume" in df.columns:
+        turnover = (df["Close"] * df["Volume"]).iloc[-20:].mean()
+        if turnover < MIN_TURNOVER_KRW:
+            return None
     close = df["Close"]
     signals = detect_signals(df)
     if not signals:
@@ -154,47 +169,91 @@ def finalize(results):
     for r in results:
         r["rs"] = round(float((moms < r["_mom"]).mean() * 100), 1)
         del r["_mom"]
-    results.sort(key=lambda r: -(r["mcap"] or 0))
+    # 시총 있는 종목 우선, 그 다음 RS순
+    results.sort(key=lambda r: (-(r["mcap"] or 0), -r["rs"]))
     return results
 
 
-def build_universe():
-    """한국 전체(KOSPI+KOSDAQ) + 미국(S&P500+나스닥100) + ETF 목록 생성"""
+# ──────────────────────────────────────────────
+# 한국 종목 목록: 3중 폴백
+# ──────────────────────────────────────────────
+def kr_list_from_krx():
+    """1순위: KRX 정보데이터시스템 (해외 IP 차단 가능성 있음)"""
     import FinanceDataReader as fdr
+    krx = fdr.StockListing("KRX")
+    krx = krx[krx["Market"].isin(["KOSPI", "KOSDAQ"])]
+    out = []
+    for r in krx.itertuples():
+        name = str(r.Name)
+        if "스팩" in name or name.endswith(("우", "우B", "우C", "1우", "2우B", "3우B")):
+            continue
+        mcap = (getattr(r, "Marcap", 0) or 0) / 1400  # 달러 환산
+        out.append((str(r.Code).zfill(6), name, mcap if mcap > 0 else None))
+    return out
+
+
+def kr_list_from_kind():
+    """2순위: KIND 상장법인목록 다운로드 (차단이 덜함)"""
+    import requests
+    url = ("https://kind.krx.co.kr/corpgeneral/corpList.do"
+           "?method=download&searchType=13")
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"}
+    res = requests.get(url, headers=headers, timeout=60)
+    res.raise_for_status()
+    html = res.content.decode("euc-kr", errors="ignore")
+    tables = pd.read_html(io.StringIO(html))
+    df = tables[0]
+    out = []
+    for r in df.itertuples():
+        name = str(getattr(r, "회사명", ""))
+        code = str(getattr(r, "종목코드", "")).zfill(6)
+        if not name or not code.isdigit():
+            continue
+        if "스팩" in name:
+            continue
+        out.append((code, name, None))  # KIND에는 시총 정보 없음
+    return out
+
+
+def build_universe():
     universe = []  # (ticker, name, country, asset, mcap_usd)
 
-    # ── 한국: 전체 상장종목 ──
-    try:
-        krx = fdr.StockListing("KRX")
-        krx = krx[krx["Market"].isin(["KOSPI", "KOSDAQ"])]
-        for r in krx.itertuples():
-            name = str(r.Name)
-            # 스팩, 우선주, 리츠 인프라 등 제외
-            if "스팩" in name or name.endswith(("우", "우B", "우C", "1우", "2우B", "3우B")):
-                continue
-            mcap_krw = getattr(r, "Marcap", 0) or 0
-            if mcap_krw < MIN_MCAP_KRW:
-                continue
-            universe.append((str(r.Code), name, "KR", "stock", mcap_krw / USDKRW))
-        print(f"한국 종목: {sum(1 for u in universe if u[2]=='KR')}개")
-    except Exception as e:
-        print("KRX 목록 실패:", e)
-
-    # ── 미국: S&P500 + 나스닥100 ──
-    us_seen = set()
-    for listing in ["S&P500", "NASDAQ100"]:
+    # ── 한국 ──
+    kr = None
+    for src_name, fn in [("KRX", kr_list_from_krx), ("KIND", kr_list_from_kind)]:
         try:
-            df = fdr.StockListing(listing)
-            sym_col = "Symbol" if "Symbol" in df.columns else df.columns[0]
-            name_col = "Name" if "Name" in df.columns else df.columns[1]
-            for r in df.itertuples():
-                sym = str(getattr(r, sym_col))
-                if sym in us_seen:
-                    continue
+            kr = fn()
+            if kr and len(kr) > 100:
+                print(f"한국 목록 소스: {src_name} ({len(kr)}개)")
+                break
+            kr = None
+        except Exception as e:
+            print(f"{src_name} 목록 실패: {str(e)[:120]}")
+    if kr is None:
+        print("모든 한국 목록 소스 실패 -> 내장 대형주 목록 사용")
+        kr = [(c, n, None) for c, n in FALLBACK_KR]
+    for code, name, mcap in kr:
+        universe.append((code, name, "KR", "stock", mcap))
+
+    # ── 미국: S&P500 + 보완 종목 ──
+    us_seen = set()
+    try:
+        import FinanceDataReader as fdr
+        sp = fdr.StockListing("S&P500")
+        sym_col = "Symbol" if "Symbol" in sp.columns else sp.columns[0]
+        name_col = "Name" if "Name" in sp.columns else sp.columns[1]
+        for r in sp.itertuples():
+            sym = str(getattr(r, sym_col))
+            if sym not in us_seen:
                 us_seen.add(sym)
                 universe.append((sym, str(getattr(r, name_col)), "US", "stock", None))
-        except Exception as e:
-            print(listing, "목록 실패:", e)
+    except Exception as e:
+        print("S&P500 목록 실패:", str(e)[:120])
+    for sym, name in EXTRA_US:
+        if sym not in us_seen:
+            us_seen.add(sym)
+            universe.append((sym, name, "US", "stock", None))
     print(f"미국 종목: {len(us_seen)}개")
 
     # ── ETF ──
