@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-추세추종 매수 신호 스캐너 v3 — 전체 시장 스캔 (KRX 차단 우회)
-한국 종목 목록: KRX 정보데이터시스템 -> KIND 공시사이트 -> 내장 목록 순서로 시도
-미국: S&P500 전체 + 나스닥 주요종목
+추세추종 매수 신호 스캐너 v5 — 전체 시장 + 상승장 레짐 필터
+상승장 기준(지수 10일 이평 상승 + 20일 이평 상승 + 10일선>20일선)을 충족하는
+시장의 신호만 표시. 한국=KOSPI, 미국=S&P500 기준.
 """
 import io
 import json
@@ -46,6 +46,51 @@ FALLBACK_KR = [
     ("068270", "셀트리온"), ("035420", "NAVER"), ("012450", "한화에어로스페이스"),
     ("042660", "한화오션"), ("267260", "HD현대일렉트릭"), ("034020", "두산에너빌리티"),
 ]
+
+
+# ──────────────────────────────────────────────
+# 상승장 판정 (레짐 필터)
+# 기준: 지수 10일 이평 상승 + 20일 이평 상승 + 10일선 > 20일선 (셋 다 충족)
+# 한국 = KOSPI(KS11), 미국 = S&P500(US500)
+# ──────────────────────────────────────────────
+REGIME_INDEX = {"KR": ("KS11", "KOSPI"), "US": ("US500", "S&P500")}
+
+
+def check_regime(symbol):
+    """지수 심볼로 상승장 여부 판정. (bull, 세부내용) 반환"""
+    import FinanceDataReader as fdr
+    start = (dt.date.today() - dt.timedelta(days=200)).isoformat()
+    df = fdr.DataReader(symbol, start).dropna(subset=["Close"])
+    if len(df) < 30:
+        raise ValueError("지수 데이터 부족")
+    c = df["Close"]
+    ma10, ma20 = sma(c, 10), sma(c, 20)
+    cond1 = bool(ma10.iloc[-1] > ma10.iloc[-2])   # 10일 이평 상승
+    cond2 = bool(ma20.iloc[-1] > ma20.iloc[-2])   # 20일 이평 상승
+    cond3 = bool(ma10.iloc[-1] > ma20.iloc[-1])   # 10일선 > 20일선
+    return dict(
+        bull=cond1 and cond2 and cond3,
+        ma10Rising=cond1, ma20Rising=cond2, ma10AboveMa20=cond3,
+        close=round(float(c.iloc[-1]), 2),
+    )
+
+
+def get_regimes(meta):
+    regimes = {}
+    for country, (symbol, label) in REGIME_INDEX.items():
+        try:
+            r = check_regime(symbol)
+            r["index"] = label
+            regimes[country] = r
+            status = "상승장" if r["bull"] else "하락/횡보장"
+            print(f"{label} 레짐: {status} (10일이평상승={r['ma10Rising']}, "
+                  f"20일이평상승={r['ma20Rising']}, 10>20={r['ma10AboveMa20']})")
+        except Exception as e:
+            print(f"{label} 레짐 판정 실패: {str(e)[:100]} -> 상승장으로 간주하고 진행")
+            regimes[country] = dict(bull=True, index=label, error=True)
+            meta["warnings"].append(
+                f"{label} 지수 데이터를 불러오지 못해 상승장 판정 없이 신호를 표시했어요.")
+    return regimes
 
 
 def sma(s, n): return s.rolling(n).mean()
@@ -310,7 +355,24 @@ def fetch_and_analyze(item):
 def main():
     print("유니버스 구성 중...")
     universe, meta = build_universe()
+
+    # ── 상승장 판정: 하락/횡보장인 국가는 스캔 자체를 건너뜀 ──
+    regimes = get_regimes(meta)
+    meta["regime"] = regimes
+    allowed = {c for c, r in regimes.items() if r.get("bull")}
+    skipped = [regimes[c]["index"] for c in regimes if c not in allowed]
+    if skipped:
+        print(f"하락/횡보장으로 제외: {', '.join(skipped)}")
+    universe = [u for u in universe if u[2] in allowed]
+
     meta["scanned"] = len(universe)
+    if not universe:
+        print("모든 시장이 하락/횡보장 -> 신호 없음으로 저장")
+        payload = dict(asOf=dt.date.today().isoformat(), count=0, meta=meta, stocks=[])
+        with open("signals.json", "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=1)
+        return
+
     print(f"총 {len(universe)}종목 스캔 시작 (동시 {WORKERS}개)")
 
     results, done = [], 0
