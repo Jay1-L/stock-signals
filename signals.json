@@ -1,18 +1,18 @@
 {
- "asOf": "2026-07-06",
+ "asOf": "2026-07-07",
  "count": 0,
  "meta": {
   "krSource": "KRX",
-  "krListed": 2530,
+  "krListed": 2529,
   "usListed": 510,
   "warnings": [],
   "regime": {
    "KR": {
     "bull": false,
     "ma10Rising": false,
-    "ma20Rising": true,
+    "ma20Rising": false,
     "ma10AboveMa20": false,
-    "close": 8051.33,
+    "close": 7656.31,
     "index": "KOSPI"
    },
    "US": {
