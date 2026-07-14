@@ -1,5 +1,5 @@
 {
- "asOf": "2026-07-13",
+ "asOf": "2026-07-14",
  "count": 372,
  "meta": {
   "krSource": "KRX",
@@ -12,7 +12,7 @@
     "ma10Rising": false,
     "ma20Rising": false,
     "ma10AboveMa20": false,
-    "close": 6806.93,
+    "close": 6856.83,
     "index": "KOSPI"
    },
    "US": {
@@ -5721,7 +5721,7 @@
    "asset": "stock",
    "sig": "avg",
    "desc": "EMA10 단기 근접 · 252일 보유",
-   "close": 184.1,
+   "close": 184.11,
    "zone": [
     175.71,
     184.72
