@@ -1,18 +1,20 @@
 {
- "asOf": "2026-07-24",
+ "asOf": "2026-07-27",
  "count": 0,
  "meta": {
-  "krSource": "KRX",
-  "krListed": 2527,
+  "krSource": "KIND",
+  "krListed": 2703,
   "usListed": 510,
-  "warnings": [],
+  "warnings": [
+   "시가총액 정보를 제공하지 않는 목록 소스를 사용해 한국 종목의 시총 필터가 동작하지 않아요."
+  ],
   "regime": {
    "KR": {
     "bull": false,
     "ma10Rising": false,
     "ma20Rising": false,
     "ma10AboveMa20": false,
-    "close": 6690.62,
+    "close": 6755.75,
     "index": "KOSPI"
    },
    "US": {
