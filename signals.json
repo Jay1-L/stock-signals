@@ -1,5 +1,5 @@
 {
- "asOf": "2026-07-30",
+ "asOf": "2026-07-31",
  "count": 0,
  "meta": {
   "krSource": "KRX",
@@ -12,7 +12,7 @@
     "ma10Rising": false,
     "ma20Rising": false,
     "ma10AboveMa20": false,
-    "close": 5593.56,
+    "close": 6595.45,
     "index": "KOSPI"
    },
    "US": {
