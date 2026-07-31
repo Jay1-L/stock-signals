@@ -17,10 +17,10 @@
    },
    "US": {
     "bull": false,
-    "ma10Rising": false,
-    "ma20Rising": false,
+    "ma10Rising": true,
+    "ma20Rising": true,
     "ma10AboveMa20": false,
-    "close": 7437.63,
+    "close": 7489.72,
     "index": "S&P500"
    }
   },
