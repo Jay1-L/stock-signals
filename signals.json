@@ -1,13 +1,11 @@
 {
- "asOf": "2026-08-28",
+ "asOf": "2026-08-29",
  "count": 0,
  "meta": {
-  "krSource": "KIND",
-  "krListed": 2704,
+  "krSource": "KRX",
+  "krListed": 2531,
   "usListed": 510,
-  "warnings": [
-   "시가총액 정보를 제공하지 않는 목록 소스를 사용해 한국 종목의 시총 필터가 동작하지 않아요."
-  ],
+  "warnings": [],
   "regime": {
    "KR": {
     "bull": false,
