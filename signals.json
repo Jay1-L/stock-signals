@@ -1,26 +1,26 @@
 {
- "asOf": "2026-09-03",
+ "asOf": "2026-09-04",
  "count": 0,
  "meta": {
   "krSource": "KRX",
-  "krListed": 2529,
+  "krListed": 2530,
   "usListed": 510,
   "warnings": [],
   "regime": {
    "KR": {
     "bull": false,
     "ma10Rising": false,
-    "ma20Rising": false,
+    "ma20Rising": true,
     "ma10AboveMa20": true,
-    "close": 6579.48,
+    "close": 6687.21,
     "index": "KOSPI"
    },
    "US": {
     "bull": false,
     "ma10Rising": true,
-    "ma20Rising": true,
+    "ma20Rising": false,
     "ma10AboveMa20": false,
-    "close": 7747.71,
+    "close": 7738.93,
     "index": "S&P500"
    }
   },
