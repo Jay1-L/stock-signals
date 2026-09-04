@@ -2,10 +2,12 @@
  "asOf": "2026-09-04",
  "count": 0,
  "meta": {
-  "krSource": "KRX",
-  "krListed": 2530,
+  "krSource": "내장목록",
+  "krListed": 12,
   "usListed": 510,
-  "warnings": [],
+  "warnings": [
+   "한국 전체 종목 목록을 불러오지 못해 대형주 12개만 스캔했어요. 코스피·코스닥 전체가 반영되지 않은 결과입니다."
+  ],
   "regime": {
    "KR": {
     "bull": false,
@@ -20,7 +22,7 @@
     "ma10Rising": true,
     "ma20Rising": false,
     "ma10AboveMa20": false,
-    "close": 7738.93,
+    "close": 7718.6,
     "index": "S&P500"
    }
   },
