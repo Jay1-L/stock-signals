@@ -22,7 +22,7 @@
     "ma10Rising": true,
     "ma20Rising": false,
     "ma10AboveMa20": false,
-    "close": 7692.19,
+    "close": 7673.52,
     "index": "S&P500"
    }
   },
@@ -9906,10 +9906,10 @@
    "asset": "stock",
    "sig": "avg",
    "desc": "SMA10 단기 근접 · 5일 보유",
-   "close": 1010.0,
+   "close": 5050.0,
    "zone": [
-    984.75,
-    1035.25
+    4923.75,
+    5176.25
    ],
    "inZone": true,
    "stats": {
