@@ -1,5 +1,5 @@
 {
- "asOf": "2026-10-01",
+ "asOf": "2026-10-02",
  "count": 0,
  "meta": {
   "krSource": "KIND",
@@ -22,7 +22,7 @@
     "ma10Rising": true,
     "ma20Rising": false,
     "ma10AboveMa20": true,
-    "close": 7654.09,
+    "close": 7666.45,
     "index": "S&P500"
    }
   },
