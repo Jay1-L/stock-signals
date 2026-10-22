@@ -1,9 +1,9 @@
 {
- "asOf": "2026-10-21",
+ "asOf": "2026-10-22",
  "count": 0,
  "meta": {
   "krSource": "KRX",
-  "krListed": 2529,
+  "krListed": 2530,
   "usListed": 510,
   "warnings": [],
   "regime": {
@@ -20,7 +20,7 @@
     "ma10Rising": false,
     "ma20Rising": true,
     "ma10AboveMa20": true,
-    "close": 7725.6,
+    "close": 7757.17,
     "index": "S&P500"
    }
   },
