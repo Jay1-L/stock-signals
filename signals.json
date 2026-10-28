@@ -9,18 +9,18 @@
   "regime": {
    "KR": {
     "bull": false,
-    "ma10Rising": false,
+    "ma10Rising": true,
     "ma20Rising": false,
     "ma10AboveMa20": false,
-    "close": 5638.34,
+    "close": 6012.44,
     "index": "KOSPI"
    },
    "US": {
     "bull": false,
-    "ma10Rising": false,
+    "ma10Rising": true,
     "ma20Rising": true,
     "ma10AboveMa20": false,
-    "close": 7722.6,
+    "close": 7739.2,
     "index": "S&P500"
    }
   },
