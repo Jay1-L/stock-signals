@@ -1,5 +1,5 @@
 {
- "asOf": "2026-11-04",
+ "asOf": "2026-11-05",
  "count": 0,
  "meta": {
   "krSource": "KRX",
@@ -20,7 +20,7 @@
     "ma10Rising": false,
     "ma20Rising": false,
     "ma10AboveMa20": false,
-    "close": 7708.0,
+    "close": 7688.62,
     "index": "S&P500"
    }
   },
