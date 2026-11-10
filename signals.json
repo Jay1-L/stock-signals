@@ -12,7 +12,7 @@
     "ma10Rising": false,
     "ma20Rising": false,
     "ma10AboveMa20": false,
-    "close": 5018.85,
+    "close": 5239.13,
     "index": "KOSPI"
    },
    "US": {
@@ -20,7 +20,7 @@
     "ma10Rising": false,
     "ma20Rising": false,
     "ma10AboveMa20": false,
-    "close": 7549.94,
+    "close": 7496.13,
     "index": "S&P500"
    }
   },
